@@ -1,0 +1,98 @@
+---
+title: "causal_01_causenet_prep.Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Parsing CauseNet Precision JSON
+
+The CauseNet precision dataset was downloaded from [this link](https://groups.uni-paderborn.de/wdqa/causenet/causality-graphs/causenet-precision.jsonl.bz2) on 7/14/2021 and extracted with 7zip. The extracted `causenet-precision.jsonl` file was placed in the `data_in` subdirectory.
+
+```{r}
+library(jsonlite)
+library(readr)
+library(tibble)
+
+line_to_df <- function(X) {
+    json <- jsonlite::fromJSON(X)
+    tibble(
+        cause = json$causal_relation$cause$concept,
+        effect = json$causal_relation$effect$concept,
+        sentence = json$sources$payload$sentence
+    )
+}
+```
+
+The json is parsed to produce a dataframe row for each sentence. 
+An intermediate csv file is streamed to the `scratch` subdirectory.
+
+```{r}
+cn_file <- "data_in/causenet-precision.jsonl"
+N <- 1
+N_max <- 200000
+f <- file(description = cn_file, open = "r")
+outfile <- "scratch/causenet_parsed.csv"
+unlink(outfile)
+read <- TRUE
+while (read) {
+    if (N %% 50 == 0) print(sprintf("Prop done: %.3f", N/N_max))
+    N <- N + 1
+    X <- readLines(f, n = 1)
+    if (N  >= N_max) break
+    if (is.null(X)) break
+    Y <- line_to_df(X)
+    write_csv(Y, outfile, append = TRUE)
+}
+```
+
+Encountered an error at N = 197808, at 98.9% percent done
+
+```{r}
+cn_file <- "data_in/causenet-precision.jsonl"
+N <- 197809
+N_max <- 200000
+f <- file(description = cn_file, open = "r")
+outfile <- "scratch/causenet_parsed.csv"
+read <- TRUE
+while (read) {
+    if (N %% 50 == 0) print(sprintf("Prop done: %.3f", N/N_max))
+    N <- N + 1
+    X <- readLines(f, n = 1)
+    if (N  >= N_max) break
+    if (is.null(X)) break
+    Y <- line_to_df(X)
+    write_csv(Y, outfile, append = TRUE)
+}
+```
+
+Remaining rows were appended without issue
+
+## Subsample Parsed CauseNet Data
+
+Load the outputted csv back in and do a seeded subsample of 500,000 rows.
+After deduplication, there is ~946k unique entries, so this is roughly half.
+The subsampled csv is exported to the `scratch` subdirectory.
+
+```{r}
+library(dplyr)
+
+prec <- read_csv("scratch/causenet_parsed.csv",
+                 col_names = c("cause", "effect", "evidence"))
+
+prec_2 <- distinct(prec)
+```
+
+```{r}
+set.seed(4313469) # did sample(1:10000000, 1) to get a random seed
+prec_2 %>%
+    sample_n(500000) ->
+    prec_sub
+
+write_csv(prec_sub, "scratch/causenet_precision_500k.csv")
+```
+
+
